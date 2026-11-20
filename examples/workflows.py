@@ -1,6 +1,7 @@
 import json
 import sys
 import tempfile
+from dataclasses import asdict
 from pathlib import Path
 from strataleaf import Database, Archives, Conflict, InvalidDocument, InvalidCursor, ReadOnly, SnapshotTooOld, ReplicationError
 
@@ -137,6 +138,35 @@ def run(flow):
                 output = {"inspection": db.diagnostics.inspect(deep=True), "fingerprint": db.diagnostics.fingerprint(), "checkpoint": db.checkpoint()}
                 if not output["inspection"]["ok"]:
                     raise RuntimeError("integrity inspection failed")
+            elif flow == "migration":
+                tightened = {"fields": dict(SCHEMA["fields"]), "required": ["region", "sequence", "code"], "additional": False}
+                specs = [{"name": "unique_code", "field": "code", "unique": True}]
+                db.batch().put("segments", "seg_06", {"region": "east", "sequence": 6}).commit()
+                db.batch().put("segments", "seg_07", {"region": "west", "sequence": 7, "code": "c0"}).commit()
+                before = (db.revision, db.catalog.describe("segments")["generation"])
+                plan = db.migration.rehearse("segments", tightened, specs)
+                if (db.revision, db.catalog.describe("segments")["generation"]) != before:
+                    raise RuntimeError("rehearsal modified the database")
+                as_is = rejected(lambda: db.migration.apply(plan), Conflict)
+                direct_index = db.indexes.create("segments", "by_region", "region")
+                catalog_stale = rejected(lambda: db.migration.apply(plan, remedy=True), Conflict)
+                moved = db.migration.rehearse("segments", tightened, specs)
+                db.batch().put("segments", "seg_08", {"region": "north", "sequence": 8, "code": "c8"}).commit()
+                document_stale = rejected(lambda: db.migration.apply(moved, remedy=True), Conflict)
+                fresh = db.migration.rehearse("segments", tightened, specs)
+                applied = db.migration.apply(fresh, remedy=True)
+                duplicate = rejected(lambda: db.batch().put("segments", "seg_09", {"region": "east", "sequence": 9, "code": "c1"}).commit(), Conflict)
+                evolved = db.catalog.evolve("segments", {**tightened, "fields": {**tightened["fields"], "note": "string"}}, applied.generation)
+                history = db.get("segments", "seg_06", revision=plan.revision)
+                if db.get("segments", "seg_06") is not None or db.get("segments", "seg_07") is not None or history is None:
+                    raise RuntimeError("remedy deletes not reflected in current and historical reads")
+                output = {"plan": asdict(plan), "apply_as_is": as_is, "direct_index": direct_index,
+                          "catalog_stale": catalog_stale, "document_stale": document_stale,
+                          "fresh": {"revision": fresh.revision, "executable": fresh.executable, "remedy": fresh.remedy},
+                          "applied": applied.__dict__, "remedy_commit": db.feed.read(applied.revision - 1, limit=1),
+                          "indexes": db.indexes.list("segments"), "unique_enforced": duplicate,
+                          "direct_evolve_generation": evolved, "history_kept": history.document,
+                          "integrity": db.diagnostics.inspect(True)["ok"]}
             elif flow == "transfer":
                 exported = db.transfer.export_lines("segments")
                 db.catalog.create("copy_segments", SCHEMA)

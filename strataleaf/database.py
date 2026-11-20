@@ -4,6 +4,7 @@ from .catalog import Catalog
 from .diagnostics import Diagnostics
 from .feeds import ChangeFeed
 from .indexes import Indexes
+from .migration import Migration
 from .mvcc import read_record
 from .patch import patch_document
 from .query import QueryEngine
@@ -20,6 +21,7 @@ class Database:
         self._store = Storage(path, timeout)
         self.catalog = Catalog(self._store)
         self.indexes = Indexes(self._store)
+        self.migration = Migration(self._store)
         self.feed = ChangeFeed(self._store)
         self.retention = Retention(self._store)
         self.archives = Archives(self._store)

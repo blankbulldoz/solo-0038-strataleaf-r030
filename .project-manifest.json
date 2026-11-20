@@ -19,7 +19,8 @@
       "同一历史读版本完成分组和数值计算",
       "读后修改受版本前置条件保护",
       "物理完整性与逻辑引用一致性可观察",
-      "外部文档流验证后整批导入"
+      "外部文档流验证后整批导入",
+      "预演结论绑定快照且过期拒绝应用"
     ]
   },
   "project_shape": "backend",
@@ -173,6 +174,15 @@
       "owned_facts": "文档流边界与原子导入",
       "consumers": [
         "transfer"
+      ]
+    },
+    {
+      "id": "migration",
+      "path": "strataleaf/migration.py",
+      "responsibility": "收紧预演、快照绑定与受控应用",
+      "owned_facts": "预演计划与快照绑定",
+      "consumers": [
+        "migration"
       ]
     },
     {
@@ -513,6 +523,28 @@
       "success": "外部文档流验证后整批导入",
       "failure": "重复键整体拒绝",
       "verification": "python3 -m examples.workflows transfer"
+    },
+    {
+      "id": "migration",
+      "name": "迁移预演与受控应用",
+      "entry": "Database.migration.rehearse",
+      "module_ids": [
+        "migration",
+        "catalog",
+        "schema",
+        "index",
+        "commit",
+        "snapshot",
+        "storage"
+      ],
+      "steps": [
+        "输入校验与读取已有事实",
+        "收紧预演、快照绑定与受控应用",
+        "形成可观察结果"
+      ],
+      "success": "预演结论绑定快照且过期拒绝应用",
+      "failure": "数据或目录变化后拒绝应用",
+      "verification": "python3 -m examples.workflows migration"
     }
   ],
   "complexity": {
